@@ -52,9 +52,7 @@ struct scrcpy {
     struct sc_decoder audio_decoder;
     struct sc_recorder recorder;
     struct sc_delay_buffer display_buffer;
-#ifdef HAVE_VNC
-    struct sc_vnc_sink vnc_sink;
-#endif
+    struct plugin* plugins[2];
 #ifdef HAVE_V4L2
     struct sc_v4l2_sink v4l2_sink;
     struct sc_delay_buffer v4l2_buffer;
@@ -316,9 +314,6 @@ scrcpy(struct scrcpy_options *options) {
     bool recorder_started = false;
 #ifdef HAVE_V4L2
     bool v4l2_sink_initialized = false;
-#endif
-#ifdef HAVE_VNC
-    bool vnc_sink_initialized = false;
 #endif
     bool video_demuxer_started = false;
     bool audio_demuxer_started = false;
@@ -703,17 +698,36 @@ aoa_hid_end:
                                      &s->audio_player.frame_sink);
         }
     }
+
 #ifdef HAVE_VNC
-    if (options->vnc_server) {
-        if (!sc_vnc_sink_init(&s->vnc_sink, "my vnc server", controller)) {
+    struct sc_vnc_sink plugindata = {
+            .vncservername = "my vnc server",
+            .controller = controller,
+    };
+    struct plugin p = {
+            .name = "vnc",
+            .needs_video_decoder = true,
+            .sink_initialized = false,
+            .plugindata = &plugindata,
+            .init = sc_vnc_sink_init,
+            .destroy = sc_vnc_sink_destroy,
+            .frame_source = &s->video_decoder.frame_source,
+            .should_be_init = options->vnc_server,
+    };
+    plugindata.plugin = &p;
+    s->plugins[0] = &p;
+#endif
+
+    for(uint8_t i = 0; i<sizeof(s->plugins)/sizeof(void*); i++) {
+        struct plugin *p = s->plugins[i];
+        if(p == NULL) continue;
+        if(!p->init(p->plugindata)) {
             printf("bad vnc init \n");
             goto end;
         }
-        vnc_sink_initialized = true;
-        struct sc_frame_source *src = &s->video_decoder.frame_source;
-        sc_frame_source_add_sink(src, &s->vnc_sink.frame_sink);
+        p->sink_initialized = true;
+        sc_frame_source_add_sink(p->frame_source, &(p->frame_sink));
     }
-#endif
 
 #ifdef HAVE_V4L2
     if (options->v4l2_device) {
@@ -806,11 +820,13 @@ end:
         sc_v4l2_sink_destroy(&s->v4l2_sink);
     }
 #endif
-#ifdef HAVE_VNC
-    if (vnc_sink_initialized) {
-        sc_vnc_sink_destroy(&s->vnc_sink);
+    for(uint8_t i = 0; i<sizeof(s->plugins)/sizeof(void*); i++) {
+        struct plugin *p = s->plugins[i];
+        if(p == NULL) continue;
+        if (p->sink_initialized) {
+            p->destroy(p->plugindata);
+        }
     }
-#endif
 
 #ifdef HAVE_USB
     if (aoa_hid_initialized) {

@@ -15,8 +15,24 @@
 #include "frame_buffer.h"
 #include "util/tick.h"
 
-struct sc_vnc_sink {
+struct plugin {
+    char name[4];
+    bool needs_video_decoder;
+    bool sink_initialized;
+    bool should_be_init;
+    //struct sc_delay_buffer delay_buffer;
+    void* plugindata;
+    void* frame_source;
+
     struct sc_frame_sink frame_sink; // frame sink trait
+
+    bool (*init)(const void* plugindata);
+    bool (*destroy)(const void* plugindata);
+};
+
+struct sc_vnc_sink {
+    char* vncservername;
+    struct plugin *plugin;
     struct sc_controller *controller;
 
     struct SwsContext * ctx;
@@ -26,11 +42,11 @@ struct sc_vnc_sink {
     uint8_t bpp;
 
     bool was_down;
-    char *device_name;
 };
 
+
 bool
-sc_vnc_sink_init(struct sc_vnc_sink *vs, const char *device_name, struct sc_controller *controller);
+sc_vnc_sink_init(struct sc_vnc_sink *vs);
 
 void
 sc_vnc_sink_destroy(struct sc_vnc_sink *vs);
