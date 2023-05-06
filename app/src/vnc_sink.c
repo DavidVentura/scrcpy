@@ -6,7 +6,7 @@
 #include "util/str.h"
 
 /** Downcast frame_sink to sc_vnc_sink */
-#define DOWNCAST(SINK) container_of(SINK, struct sc_vnc_sink, frame_sink)
+#define DOWNCAST(SINK) container_of(SINK, struct plugin, frame_sink)
 
 
 static bool
@@ -24,7 +24,8 @@ sc_vnc_frame_sink_close(struct sc_frame_sink *sink) {
 
 static bool
 sc_vnc_frame_sink_push(struct sc_frame_sink *sink, const AVFrame *frame) {
-    struct sc_vnc_sink *vnc = DOWNCAST(sink);
+    struct plugin *plugin = DOWNCAST(sink);
+    struct sc_vnc_sink *vnc = plugin->plugindata;
     // XXX: ideally this would get "damage" regions from the decoder
     // to prevent marking the entire screen as modified if only a small
     // part changed
@@ -60,7 +61,7 @@ sc_vnc_frame_sink_push(struct sc_frame_sink *sink, const AVFrame *frame) {
 }
 
 bool
-sc_vnc_sink_init(struct sc_vnc_sink *vs, const char *device_name, struct sc_controller *controller) {
+sc_vnc_sink_init(struct sc_vnc_sink *vs) {
     uint8_t placeholder_width = 32;
     uint8_t placeholder_height = 32;
     static const struct sc_frame_sink_ops ops = {
@@ -69,16 +70,16 @@ sc_vnc_sink_init(struct sc_vnc_sink *vs, const char *device_name, struct sc_cont
         .push = sc_vnc_frame_sink_push,
     };
 
-    vs->frame_sink.ops = &ops;
+    printf("from init, name is %s\n", vs->vncservername);
+    vs->plugin->frame_sink.ops = &ops;
     vs->bpp = 4;
     vs->screen = rfbGetScreen(0, NULL, placeholder_width, placeholder_height, 8, 3, vs->bpp);
-    vs->screen->desktopName = device_name;
+    vs->screen->desktopName = vs->vncservername;
     vs->screen->alwaysShared = true;
     vs->screen->frameBuffer = (char *)malloc(placeholder_width * placeholder_height * vs->bpp);
     vs->screen->ptrAddEvent = ptr_add_event;
     vs->screen->screenData = vs;
     vs->was_down = false;
-    vs->controller = controller;
     rfbInitServer(vs->screen);
     rfbRunEventLoop(vs->screen, -1, true); // TODO: integrate into proper lifecycle
     return true;
